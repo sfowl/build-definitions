@@ -1,0 +1,73 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-sast-coverity-check
+spec:
+  description: |
+    Test the sast-coverity-check task with a customer repository
+  workspaces:
+    - name: tests-workspace
+  tasks:
+    - name: init
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/init/0.2/init.yaml
+      params:
+        - name: image-url
+          value: "quay.io/redhat-user-workloads/jperezde-tenant/tests/tests-sast-shell-check:latest"
+    - name: clone-repository
+      runAfter:
+        - init
+      workspaces:
+        - name: output
+          workspace: tests-workspace
+      params:
+        - name: url
+          value: https://github.com/konflux-ci/test-data-sast
+        - name: revision
+          value: main
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/git-clone/0.1/git-clone.yaml
+    - name: scan-with-coverity
+      workspaces:
+        - name: workspace
+          workspace: tests-workspace
+      runAfter:
+        - clone-repository
+      taskRef:
+        name: sast-coverity-check
+      params:
+        - name: image-url
+          value: "quay.io/redhat-user-workloads/jperezde-tenant/tests/tests-sast-shell-check:latest"
+    - name: check-result
+      runAfter:
+        - scan-with-coverity
+      workspaces:
+        - name: workspace
+          workspace: tests-workspace
+      taskSpec:
+        steps:
+          - name: check-result
+            image: quay.io/konflux-ci/konflux-test:v1.4.12@sha256:b42202199805420527c2552dea22b02ab0f051b79a4b69fbec9a77f8832e5623
+            script: |
+              #!/bin/bash
+
+              set -e
+
+              cat $(results.TEST_OUTPUT_PATH.path)
+              # coverity check should skip because license is unavailable in ephemeral clusters
+              jq -e < $(results.TEST_OUTPUT.path) '.result == "SKIPPED"'

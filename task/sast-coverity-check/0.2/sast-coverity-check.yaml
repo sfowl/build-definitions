@@ -229,6 +229,9 @@ spec:
     script: |
       #!/bin/bash
 
+      . /usr/local/share/konflux-test/utils.sh
+      trap 'handle_error $(results.TEST_OUTPUT.path)' EXIT
+
       # FIXME: Dockerfile discovery logic is copied from buildah task
       SOURCE_CODE_DIR=source
       if [ -e "$SOURCE_CODE_DIR/$CONTEXT/$DOCKERFILE" ]; then
@@ -251,6 +254,12 @@ spec:
       else
         echo "Cannot find Dockerfile $DOCKERFILE"
         exit 1
+      fi
+
+      if [ ! -f /etc/secrets/cov/cov-license ]; then
+        note="Task $(context.task.name) skipped. A Secret named 'cov-license' is required."
+        TEST_OUTPUT=$(make_result_json -r SKIPPED -t "$note")
+        echo "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
       fi
 
       # install Coverity license file
